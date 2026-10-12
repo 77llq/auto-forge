@@ -2,11 +2,11 @@
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Auto Forge · 模拟工作台</title><link rel="stylesheet" href="/style.css">
+  <title>Auto Forge · 研发工作台</title><link rel="stylesheet" href="/style.css"><link rel="stylesheet" href="/intake.css">
   <script src="/app.js" defer></script>
 </head>
 <body>
-  <header><a class="brand" href="/">A<span>F</span> / AUTO FORGE</a><span class="badge">M1 · SIMULATION</span></header>
+  <header><a class="brand" href="/">A<span>F</span> / AUTO FORGE</a><span class="badge">M2 · SOURCE INTAKE</span></header>
   <main>
     <section class="hero"><p class="eyebrow">ENGINEERING, ORCHESTRATED.</p><h1>从一个需求，<br>到一条可追溯的交付链。</h1>
       <p class="intro">先让每一步可靠运行，再让 Agent 接手工作。</p>
@@ -18,7 +18,7 @@
     <p id="message" role="status" aria-live="polite">等待连接 · 服务仅监听本机地址</p>
     <div class="workspace">
       <section class="panel">
-        <p class="eyebrow">01 / INTAKE</p><h2>项目与需求</h2>
+        <p class="eyebrow">01 / MANUAL</p><h2>项目与手动需求</h2>
         <form id="project-form"><label for="project-name">创建项目</label><div class="row"><input id="project-name" required maxlength="120" placeholder="例如：研发自动化试点"><button>新建</button></div></form>
         <label for="project">当前项目</label><select id="project"><option value="">连接后选择项目</option></select>
         <form id="run-form">
@@ -38,7 +38,48 @@
         <ol id="events" class="events"><li>执行记录会出现在这里。</li></ol>
       </section>
     </div>
-    <footer>可靠性先行 · 幂等命令 / 持久化事件 / 租约隔离 / 有限重试 <span>LOCAL FIRST · v0.1</span></footer>
+    <section class="panel intake-panel">
+      <div class="section-title"><div><p class="eyebrow">03 / SOURCE INTAKE</p><h2>消息、文档与产品草案</h2></div><div class="row"><span class="badge muted">只读采集 · 人工确认</span><button id="refresh-intake" type="button">刷新来源</button></div></div>
+      <p class="hint">先限定允许读取的 Vanish 会话或 Confluence 页面。采集器会保存来源版本；产品草案的范围和验收条件需要确认后才能进入模拟交付。</p>
+      <div class="intake-grid">
+        <div>
+          <form id="scope-form">
+            <h3>添加读取范围</h3>
+            <label for="scope-kind">来源</label><select id="scope-kind"><option value="vanish">Vanish 会话</option><option value="confluence">Confluence 页面</option></select>
+            <label for="scope-id">会话代码 / 页面 ID</label><input id="scope-id" required maxlength="200" placeholder="输入已核对的代码或数字页面 ID">
+            <label for="scope-label">显示名称</label><input id="scope-label" required maxlength="200" placeholder="例如：试点需求讨论">
+            <p class="hint">只有已添加的范围会被采集。填写范围不会立即读取消息或文档。</p>
+            <button type="submit">添加范围</button>
+          </form>
+          <h3>已配置范围</h3><ul id="scope-list" class="mini-list"><li>选择项目后显示。</li></ul>
+        </div>
+        <div>
+          <h3>来源快照</h3>
+          <label for="source-choice">用于起草的来源</label><select id="source-choice"><option value="">暂无来源</option></select>
+          <p id="source-preview" class="preview-text">采集后可在此查看来源内容。</p>
+          <button id="create-draft" type="button" disabled>生成待确认草案</button>
+          <p class="hint">系统只生成可编辑的初稿，尚不调用 AI 模型。验收方法由人确认。</p>
+        </div>
+      </div>
+      <div class="draft-area">
+        <div class="section-title"><h3>产品草案</h3><span id="draft-status" class="badge muted">暂无草案</span></div>
+        <label for="draft-choice">选择草案</label><select id="draft-choice"><option value="">暂无草案</option></select>
+        <form id="draft-form">
+          <div class="draft-grid">
+            <div><label for="draft-title">标题</label><input id="draft-title" required maxlength="200"></div>
+            <div><label for="draft-scope">本次范围</label><input id="draft-scope" required maxlength="4000"></div>
+          </div>
+          <label for="draft-requirement">具体需求</label><textarea id="draft-requirement" required maxlength="4000" rows="3"></textarea>
+          <div class="draft-grid">
+            <div><label for="draft-method">验收方法</label><input id="draft-method" required maxlength="4000"></div>
+            <div><label for="draft-expected">预期结果</label><input id="draft-expected" required maxlength="4000"></div>
+          </div>
+          <label for="draft-blockers">待澄清问题（每行一条；确认完成后清空）</label><textarea id="draft-blockers" rows="2"></textarea>
+          <div class="row draft-buttons"><button id="save-draft" type="submit" disabled>保存修改</button><button id="approve-draft" type="button" class="primary" disabled>批准并启动模拟</button></div>
+        </form>
+      </div>
+    </section>
+    <footer>来源版本 / 人工确认 / 持久化调度 / 有限重试 <span>LOCAL FIRST · v0.2</span></footer>
   </main>
 </body>
 </html>

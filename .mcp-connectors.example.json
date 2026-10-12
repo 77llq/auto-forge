@@ -1,0 +1,11 @@
+{
+  "vanish": {
+    "transport": "stdio",
+    "command": "/absolute/path/to/your/vanish-mcp-server",
+    "args": []
+  },
+  "confluence": {
+    "transport": "http",
+    "url": "http://127.0.0.1:4444/mcp"
+  }
+}

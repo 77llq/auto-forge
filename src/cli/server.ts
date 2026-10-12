@@ -9,7 +9,8 @@ const pool = connectDatabase(config.DATABASE_URL);
 pool.on('error', () => console.error(JSON.stringify({ event: 'database.pool_error' })));
 try { await migrate(pool); } catch { await pool.end(); throw new Error('Database migration failed; check database availability and migration history'); }
 const service = new ForgeService(pool);
-const server = createHttpServer(service, { controlToken: config.CONTROL_API_TOKEN, workerToken: config.WORKER_API_TOKEN, workerId: config.WORKER_ID });
+const server = createHttpServer(service, { controlToken: config.CONTROL_API_TOKEN, workerToken: config.WORKER_API_TOKEN,
+  ...(config.INTAKE_API_TOKEN ? { intakeToken: config.INTAKE_API_TOKEN } : {}), workerId: config.WORKER_ID });
 const stop = new AbortController();
 process.once('SIGINT', () => stop.abort());
 process.once('SIGTERM', () => stop.abort());
@@ -17,7 +18,7 @@ await new Promise<void>((resolve, reject) => {
   server.once('error', reject);
   server.listen(config.PORT, '127.0.0.1', resolve);
 }).catch(async () => { await pool.end(); throw new Error('Could not bind local API port'); });
-console.log(`Auto Forge M1 (simulation only): http://127.0.0.1:${config.PORT}`);
+console.log(`Auto Forge M2 (intake + simulation): http://127.0.0.1:${config.PORT}`);
 const scheduler = (async () => {
   while (!stop.signal.aborted) {
     try {

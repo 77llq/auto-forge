@@ -3,6 +3,7 @@ dist/
 .env
 .env.*
 !.env.example
+.mcp-connectors.local.json
 .DS_Store
 coverage/
 work/

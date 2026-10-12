@@ -9,6 +9,7 @@ const content = [
   `TEST_DATABASE_URL=postgresql://auto_forge:${password}@127.0.0.1:55438/auto_forge_test`,
   `CONTROL_API_TOKEN=${token()}`,
   `WORKER_API_TOKEN=${token()}`,
+  `INTAKE_API_TOKEN=${token()}`,
   'PORT=4318',
   'WORKER_ID=local-simulation-worker',
   '',

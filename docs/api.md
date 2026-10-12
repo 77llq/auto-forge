@@ -1,4 +1,4 @@
-# M1 API 合同
+# M1/M2 API 合同
 
 服务地址默认 `http://127.0.0.1:4318`。JSON 响应中的数据库快照使用 snake_case；
 命令输入和命令确认使用 camelCase。所有成功请求返回 200；失败为结构化错误，
@@ -7,8 +7,9 @@
 ## 认证和重试
 
 控制端点：`Authorization: Bearer <CONTROL_API_TOKEN>`。
-`/internal/` 端点：`Authorization: Bearer <WORKER_API_TOKEN>`。
-两种密钥不能相同或互换。Worker ID 从服务端配置取得。
+`/internal/v1/jobs/` 端点：`Authorization: Bearer <WORKER_API_TOKEN>`；
+`/internal/v1/intake/` 端点：`Authorization: Bearer <INTAKE_API_TOKEN>`。
+三种密钥不能相同或互换。Worker ID 从服务端配置取得。
 `GET /health` 和静态操作台不需要密钥，但不会返回业务数据。
 
 所有 POST（heartbeat 除外）必须提供 `Idempotency-Key`，1–120 字符，仅字母、数字和 `_.:-`。
@@ -103,3 +104,29 @@ ClaimedJob：`id, deliveryId, step, inputDigest, attempt, lease: {token, epoch},
 | 500 | internal_error | 通过 requestId 定位；无保证失败提交前不要换幂等键 |
 
 现有 API 没有批量/删除/编辑/合并/发布/发消息端点。
+
+## M2 来源和草案 API
+
+控制令牌访问以下端点；`GET /v1/contracts` 同时返回 M2 的 JSON Schema：
+
+| 方法 | 路径 | 输入/用途 |
+| --- | --- | --- |
+| GET | `/v1/projects/:id/intake` | 当前项目的 scopes、runs、drafts、latestSources 快照 |
+| POST | `/v1/projects/:id/scopes` | `{connector: vanish\|confluence, externalScopeId, label}`；Confluence ID 必须为数字 |
+| POST | `/v1/scopes/:id/state` | `{enabled: boolean}`；停用会终止运行中扫描 |
+| POST | `/v1/projects/:id/drafts` | `{sourceIds: [uuid,...]}`；只允许当前版本来源 |
+| POST | `/v1/drafts/:id/revise` | `{expectedRevision, content: RequirementContent}`；不能更换来源 ID |
+| POST | `/v1/drafts/:id/approve` | `{expectedRevision}`；要求无阻塞问题、可追溯验收、来源未失效 |
+
+采集令牌仅访问：
+
+| 方法 | 路径 | 输入/用途 |
+| --- | --- | --- |
+| GET | `/internal/v1/intake/scopes` | 读取已登记范围，不返回采集凭证 |
+| POST | `/internal/v1/intake/scopes/:id/runs` | `{startPage?: 1, maxPages?: 5}`；新扫描会标记旧运行中扫描 interrupted |
+| POST | `/internal/v1/intake/runs/:id/pages` | `{page, records: [{externalId, sourceRevision, text}], hasMore}` |
+| POST | `/internal/v1/intake/runs/:id/fail` | `{reason}`：access_denied/provider_error/invalid_provider_response/transport_error/ingestion_rejected |
+
+M2 所有 POST 同样需要幂等键。扫描为 `running/completed/partial/failed`；`partial` 是页数上限仍有下一页。
+重复页不能用新幂等键再次写入；相同命令的网络重试复用原键。批准草案产生 ready Requirement，
+不会自动调用真实开发或真实测试。来源更新会使旧需求 `stale`，已有交付 `input_stale=true`。

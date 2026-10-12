@@ -3,6 +3,8 @@ import type { Pool, PoolClient } from 'pg';
 import * as c from './contracts.js';
 import { DomainError, finalPhases, hash } from './domain.js';
 import { transaction } from './db.js';
+import { command, emit } from './commands.js';
+import { currentSources } from './intake/provenance.js';
 
 type Delivery = {
   id: string; phase: string; control_state: string; revision: number;
@@ -37,30 +39,11 @@ export class ForgeService {
 
   private command<T>(actor: string, key: string, route: string, input: unknown,
     apply: (db: PoolClient) => Promise<T>): Promise<T> {
-    c.key.parse(key);
-    const receiptKey = `${actor}:${key}`;
-    const digest = hash({ actor, route, input });
-    return transaction(this.pool, async db => {
-      await db.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [receiptKey]);
-      const previous = await db.query<{ request_digest: string; response: T }>(
-        'SELECT request_digest,response FROM command_receipts WHERE key=$1', [receiptKey]);
-      if (previous.rows[0]) {
-        if (previous.rows[0].request_digest !== digest) throw new DomainError('idempotency_conflict');
-        return previous.rows[0].response;
-      }
-      // Normalize dates before returning, so the first response and replay are identical.
-      const response = JSON.parse(JSON.stringify(await apply(db))) as T;
-      await db.query('INSERT INTO command_receipts(key,request_digest,response) VALUES($1,$2,$3)',
-        [receiptKey, digest, JSON.stringify(response)]);
-      return response;
-    });
+    return command(this.pool, actor, key, route, input, apply);
   }
 
   private async emit(db: PoolClient, deliveryId: string | null, type: string, payload: unknown): Promise<void> {
-    const eventId = randomUUID();
-    await db.query('INSERT INTO domain_events(id,delivery_id,type,payload) VALUES($1,$2,$3,$4)',
-      [eventId, deliveryId, type, JSON.stringify(payload)]);
-    await db.query('INSERT INTO outbox(event_id) VALUES($1)', [eventId]);
+    await emit(db, deliveryId, type, payload);
   }
 
   private async projectExists(db: PoolClient, projectId: string): Promise<void> {
@@ -104,8 +87,7 @@ export class ForgeService {
     if (c.validateTraceability(input).length) throw new DomainError('invalid_traceability', 422);
     return this.command('control', key, `projects/${projectId}/requirements`, input, async db => {
       await this.projectExists(db, projectId);
-      const sources = await db.query('SELECT id FROM sources WHERE project_id=$1 AND id=ANY($2::uuid[])', [projectId, input.sourceIds]);
-      if (sources.rowCount !== input.sourceIds.length) throw new DomainError('source_project_mismatch', 422);
+      await currentSources(db, projectId, input.sourceIds);
       const result = { id: randomUUID(), digest: hash(input), revision: 1 as const, status: 'draft' as const };
       await db.query(`INSERT INTO requirements(id,project_id,revision,content,digest,status)
         VALUES($1,$2,1,$3,$4,'draft')`, [result.id, projectId, JSON.stringify(input), result.digest]);
@@ -121,6 +103,7 @@ export class ForgeService {
       const requirement = (await db.query<Requirement>('SELECT * FROM requirements WHERE id=$1 FOR UPDATE', [requirementId])).rows[0];
       if (!requirement) throw new DomainError('requirement_not_found', 404);
       if (requirement.revision !== input.expectedRevision) throw new DomainError('revision_conflict');
+      if (requirement.status === 'stale') throw new DomainError('requirement_stale');
       if (requirement.content.blockingQuestions.length) throw new DomainError('requirement_blocked');
       if (requirement.status !== 'ready') {
         await db.query("UPDATE requirements SET status='ready',ready_at=clock_timestamp() WHERE id=$1", [requirementId]);
@@ -143,7 +126,7 @@ export class ForgeService {
     c.uuid.parse(projectId);
     const input = c.createDelivery.parse(value);
     return this.command('control', key, `projects/${projectId}/deliveries`, input, async db => {
-      const requirement = (await db.query<Requirement>('SELECT * FROM requirements WHERE id=$1 AND project_id=$2',
+      const requirement = (await db.query<Requirement>('SELECT * FROM requirements WHERE id=$1 AND project_id=$2 FOR UPDATE',
         [input.requirementId, projectId])).rows[0];
       if (!requirement) throw new DomainError('requirement_not_found', 404);
       if (requirement.status !== 'ready') throw new DomainError('requirement_not_ready');
@@ -229,7 +212,10 @@ export class ForgeService {
       }
       const job = (await db.query<Job>(`SELECT * FROM jobs WHERE delivery_id=$1
         AND (status='queued' OR (status='running' AND lease_expires_at<=clock_timestamp()))
-        ORDER BY step_index FOR UPDATE LIMIT 1`, [delivery.id])).rows[0]!;
+        ORDER BY step_index FOR UPDATE LIMIT 1`, [delivery.id])).rows[0];
+      // The candidate EXISTS can become stale while another claimant holds the
+      // delivery lock. Recheck the job under that lock before using it.
+      if (!job) return { job: null };
       if (job.status === 'running') {
         await db.query("UPDATE attempts SET status='expired',reason='lease_expired',finished_at=clock_timestamp() WHERE job_id=$1 AND status='running'", [job.id]);
         await this.emit(db, delivery.id, 'job.lease_expired', { jobId: job.id, epoch: job.epoch });

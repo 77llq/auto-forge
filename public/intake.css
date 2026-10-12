@@ -1,0 +1,17 @@
+.intake-panel { margin-top: 24px; }
+.intake-panel .section-title .row { align-items: center; flex-wrap: wrap; }
+.intake-panel .section-title .row button { padding: 7px 11px; }
+.intake-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-top: 24px; }
+.intake-grid h3, .draft-area h3 { font-size: 15px; margin: 0 0 12px; }
+.intake-grid button { margin-top: 6px; }
+.mini-list { list-style: none; padding: 0; margin: 0; }
+.mini-list li { border-top: 1px solid #e6ece1; padding: 10px 0; font-size: 12px; line-height: 1.6; color: #596f5d; }
+.preview-text { font-size: 12px; line-height: 1.7; color: #546954; background: #f4f7f0; border: 1px solid #e2e9da; border-radius: 8px; padding: 12px; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 150px; overflow: auto; min-height: 80px; }
+.draft-area { border-top: 1px solid #e1e8dc; margin-top: 28px; padding-top: 24px; }
+.draft-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.draft-buttons { margin-top: 16px; }
+.draft-buttons button { flex: 1; }
+@media (max-width: 760px) {
+  .intake-grid, .draft-grid { grid-template-columns: 1fr; gap: 20px; }
+  .draft-buttons { flex-wrap: wrap; }
+}

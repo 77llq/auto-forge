@@ -5,12 +5,15 @@ import { ZodError } from 'zod';
 import { contractCatalog, key } from './contracts.js';
 import { DomainError } from './domain.js';
 import type { ForgeService } from './service.js';
+import { IntakeService } from './intake/service.js';
+import { intakeContractCatalog } from './intake/contracts.js';
 
-export type HttpOptions = { controlToken: string; workerToken: string; workerId: string };
+export type HttpOptions = { controlToken: string; workerToken: string; intakeToken?: string; workerId: string };
 const assets = new Map([
   ['/', ['index.html', 'text/html; charset=utf-8']],
   ['/app.js', ['app.js', 'text/javascript; charset=utf-8']],
   ['/style.css', ['style.css', 'text/css; charset=utf-8']],
+  ['/intake.css', ['intake.css', 'text/css; charset=utf-8']],
 ]);
 
 function authorize(request: IncomingMessage, token: string): void {
@@ -49,7 +52,11 @@ export function createHttpServer(service: ForgeService, options: HttpOptions) {
   if (options.controlToken.length < 32 || options.workerToken.length < 32 || options.controlToken === options.workerToken) {
     throw new Error('Distinct control and worker tokens of at least 32 characters are required');
   }
+  if (options.intakeToken && (options.intakeToken.length < 32 || [options.controlToken, options.workerToken].includes(options.intakeToken))) {
+    throw new Error('A distinct intake token of at least 32 characters is required');
+  }
   key.parse(options.workerId);
+  const intake = new IntakeService(service.pool);
   const server = createServer(async (request, response) => {
     const requestId = randomUUID();
     response.setHeader('X-Request-Id', requestId);
@@ -73,8 +80,9 @@ export function createHttpServer(service: ForgeService, options: HttpOptions) {
         return;
       }
       if (request.headers['sec-fetch-site'] === 'cross-site') throw new DomainError('cross_site_forbidden', 403);
-      const internal = pathname.startsWith('/internal/');
-      authorize(request, internal ? options.workerToken : options.controlToken);
+      if (pathname.startsWith('/internal/v1/intake/') && !options.intakeToken) throw new DomainError('intake_not_configured', 503);
+      authorize(request, pathname.startsWith('/internal/v1/intake/') ? options.intakeToken!
+        : pathname.startsWith('/internal/') ? options.workerToken : options.controlToken);
       let value: unknown;
       let commandKey = '';
       if (request.method === 'POST') {
@@ -87,13 +95,32 @@ export function createHttpServer(service: ForgeService, options: HttpOptions) {
       }
       let match: RegExpExecArray | null;
       let result: unknown;
-      if (request.method === 'GET' && pathname === '/v1/contracts') result = contractCatalog();
+      if (request.method === 'GET' && pathname === '/v1/contracts') result = { ...contractCatalog(), ...intakeContractCatalog() };
       else if (request.method === 'GET' && pathname === '/v1/projects') result = { projects: await service.listProjects() };
+      else if (request.method === 'GET' && pathname === '/internal/v1/intake/scopes') result = { scopes: await intake.listScopes() };
+      else if (request.method === 'GET' && (match = /^\/v1\/projects\/([^/]+)\/intake$/.exec(pathname))) {
+        result = await intake.projectSnapshot(match[1]!);
+      }
       else if (request.method === 'GET' && (match = /^\/v1\/projects\/([^/]+)\/snapshot$/.exec(pathname))) {
         result = await service.projectSnapshot(match[1]!);
       } else if (request.method === 'GET' && (match = /^\/v1\/deliveries\/([^/]+)$/.exec(pathname))) {
         result = await service.deliverySnapshot(match[1]!);
       } else if (request.method === 'POST' && pathname === '/v1/projects') result = await service.createProject(commandKey, value);
+      else if (request.method === 'POST' && (match = /^\/v1\/projects\/([^/]+)\/scopes$/.exec(pathname))) {
+        result = await intake.registerScope(commandKey, match[1]!, value);
+      } else if (request.method === 'POST' && (match = /^\/v1\/scopes\/([^/]+)\/state$/.exec(pathname))) {
+        result = await intake.setScopeState(commandKey, match[1]!, value);
+      } else if (request.method === 'POST' && (match = /^\/v1\/projects\/([^/]+)\/drafts$/.exec(pathname))) {
+        result = await intake.createDraft(commandKey, match[1]!, value);
+      } else if (request.method === 'POST' && (match = /^\/v1\/drafts\/([^/]+)\/(revise|approve)$/.exec(pathname))) {
+        result = match[2] === 'revise' ? await intake.reviseDraft(commandKey, match[1]!, value)
+          : await intake.approveDraft(commandKey, match[1]!, value);
+      } else if (request.method === 'POST' && (match = /^\/internal\/v1\/intake\/scopes\/([^/]+)\/runs$/.exec(pathname))) {
+        result = await intake.startRun(commandKey, match[1]!, value);
+      } else if (request.method === 'POST' && (match = /^\/internal\/v1\/intake\/runs\/([^/]+)\/(pages|fail)$/.exec(pathname))) {
+        result = match[2] === 'pages' ? await intake.ingestPage(commandKey, match[1]!, value)
+          : await intake.failRun(commandKey, match[1]!, value);
+      }
       else if (request.method === 'POST' && (match = /^\/v1\/projects\/([^/]+)\/(sources|requirements|deliveries)$/.exec(pathname))) {
         const projectId = match[1]!;
         result = match[2] === 'sources' ? await service.createSource(commandKey, projectId, value)

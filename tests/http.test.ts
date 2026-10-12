@@ -8,9 +8,11 @@ import type { TestContext } from 'node:test';
 
 const controlToken = 'control-test-token-'.repeat(3);
 const workerToken = 'worker-test-token-'.repeat(3);
-async function httpFixture(t: TestContext) {
+const intakeToken = 'intake-test-token-'.repeat(3);
+async function httpFixture(t: TestContext, intakeEnabled = false) {
   const data = await fixture(t);
-  const server = createHttpServer(data.service, { controlToken, workerToken, workerId: 'worker-http' });
+  const server = createHttpServer(data.service, { controlToken, workerToken, workerId: 'worker-http',
+    ...(intakeEnabled ? { intakeToken } : {}) });
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
   t.after(() => new Promise<void>(resolve => server.close(() => resolve())));
   const address = server.address();
@@ -25,7 +27,7 @@ test('HTTP health, local console and distinct token permissions', async t => {
   const page = await fetch(url);
   assert.equal(page.status, 200);
   assert.match(page.headers.get('content-security-policy')!, /frame-ancestors 'none'/);
-  assert.match(await page.text(), /SIMULATION/);
+  assert.match(await page.text(), /SOURCE INTAKE/);
   assert.equal((await fetch(`${url}/v1/projects`)).status, 401);
   assert.equal((await fetch(`${url}/v1/projects`, { headers: { Authorization: `Bearer ${workerToken}` } })).status, 401);
   assert.equal((await fetch(`${url}/internal/v1/jobs/claim`, { method: 'POST', headers: { Authorization: `Bearer ${controlToken}` } })).status, 401);
@@ -33,6 +35,33 @@ test('HTTP health, local console and distinct token permissions', async t => {
   assert.equal(contracts.status, 200);
   const csrf = await fetch(`${url}/v1/projects`, { headers: { Authorization: `Bearer ${controlToken}`, 'Sec-Fetch-Site': 'cross-site' } });
   assert.equal(csrf.status, 403);
+});
+
+test('intake API has its own read/ingest credential and control cannot impersonate it', async t => {
+  const { url } = await httpFixture(t, true);
+  const control = new ForgeClient(url, controlToken);
+  const intake = new ForgeClient(url, intakeToken);
+  const worker = new ForgeClient(url, workerToken);
+  const project = await control.request<{ id: string }>('/v1/projects', { name: 'HTTP intake' });
+  const scope = await control.request<{ id: string }>(`/v1/projects/${project.id}/scopes`,
+    { connector: 'confluence', externalScopeId: '12345', label: 'Fixture page' });
+  await assert.rejects(control.request('/internal/v1/intake/scopes'), error =>
+    error instanceof Error && error.message.includes('401'));
+  await assert.rejects(worker.request('/internal/v1/intake/scopes'), error =>
+    error instanceof Error && error.message.includes('401'));
+  await assert.rejects(intake.request(`/v1/projects/${project.id}/intake`), error =>
+    error instanceof Error && error.message.includes('401'));
+  const scopes = await intake.request<{ scopes: Array<{ id: string }> }>('/internal/v1/intake/scopes');
+  assert.equal(scopes.scopes[0]!.id, scope.id);
+  const run = await intake.request<{ id: string }>(`/internal/v1/intake/scopes/${scope.id}/runs`, {});
+  await intake.request(`/internal/v1/intake/runs/${run.id}/pages`, {
+    page: 1, records: [{ externalId: '12345', sourceRevision: '1', text: 'Synthetic PRD' }], hasMore: false,
+  });
+  const view = await control.request<{ runs: Array<{ status: string }> }>(`/v1/projects/${project.id}/intake`);
+  assert.equal(view.runs[0]!.status, 'completed');
+  await assert.rejects(worker.request(`/internal/v1/intake/runs/${run.id}/pages`, {
+    page: 2, records: [], hasMore: false,
+  }), error => error instanceof Error && error.message.includes('401'));
 });
 
 test('HTTP validates JSON, body size, idempotency and unexpected properties', async t => {
