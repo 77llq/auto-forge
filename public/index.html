@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Auto Forge · 模拟工作台</title><link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <header><a class="brand" href="/">A<span>F</span> / AUTO FORGE</a><span class="badge">M1 · SIMULATION</span></header>
+  <main>
+    <section class="hero"><p class="eyebrow">ENGINEERING, ORCHESTRATED.</p><h1>从一个需求，<br>到一条可追溯的交付链。</h1>
+      <p class="intro">先让每一步可靠运行，再让 Agent 接手工作。</p>
+      <p class="notice">当前版本仅模拟调度，不调用模型、不修改代码、不执行真实测试，也不会发送公司消息。</p>
+    </section>
+    <section class="access panel"><div><h2>连接本地工作台</h2><p>控制令牌只保留在当前页面内存中，刷新后需要重新输入。</p></div>
+      <form id="connect-form"><label for="token">Control API token</label><div class="row"><input id="token" type="password" autocomplete="off" required minlength="32" placeholder="粘贴 .env 中的控制令牌"><button>连接</button></div></form>
+    </section>
+    <p id="message" role="status" aria-live="polite">等待连接 · 服务仅监听本机地址</p>
+    <div class="workspace">
+      <section class="panel">
+        <p class="eyebrow">01 / INTAKE</p><h2>项目与需求</h2>
+        <form id="project-form"><label for="project-name">创建项目</label><div class="row"><input id="project-name" required maxlength="120" placeholder="例如：研发自动化试点"><button>新建</button></div></form>
+        <label for="project">当前项目</label><select id="project"><option value="">连接后选择项目</option></select>
+        <form id="run-form">
+          <label for="title">需求标题</label><input id="title" required maxlength="200" placeholder="例如：验证需求到交付的流程">
+          <label for="source">原始需求</label><textarea id="source" required maxlength="4000" rows="4" placeholder="输入一条适合试点的需求。此版本原样记录，不进行 AI 拆解。"></textarea>
+          <label for="acceptance">验收预期</label><textarea id="acceptance" required maxlength="4000" rows="2" placeholder="描述真实功能应满足的验收条件（本次模拟不验证此条件）"></textarea>
+          <p class="hint">提交会保存来源、建立 R1 → AC1 映射，确认需求就绪，并启动四阶段模拟。</p>
+          <button class="primary full" id="run-button">创建并启动模拟</button>
+        </form>
+      </section>
+      <section class="panel execution">
+        <div class="section-title"><div><p class="eyebrow">02 / EXECUTION</p><h2>交付时间线</h2></div><span id="phase" class="badge muted">尚未开始</span></div>
+        <label for="delivery">当前交付</label><select id="delivery"><option value="">暂无交付</option></select>
+        <div class="steps" id="steps"></div>
+        <div class="row controls"><button id="pause" disabled>暂停</button><button id="resume" disabled>继续</button><button id="cancel" disabled>取消</button></div>
+        <p id="delivery-note" class="hint">启动独立的模拟 Worker 后，任务将依次推进。服务重启不丢失任务。</p>
+        <ol id="events" class="events"><li>执行记录会出现在这里。</li></ol>
+      </section>
+    </div>
+    <footer>可靠性先行 · 幂等命令 / 持久化事件 / 租约隔离 / 有限重试 <span>LOCAL FIRST · v0.1</span></footer>
+  </main>
+</body>
+</html>
